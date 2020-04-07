@@ -1,40 +1,145 @@
 const path = require('path');
 const HTMLWebpackPlugin = require('html-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const MiniCSSExtractPlugin = require('mini-css-extract-plugin');
+const OptimizeCssAssetsWebpackPlugin = require('optimize-css-assets-webpack-plugin');
+const TerserWebpackPlugin = require('terser-webpack-plugin');
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+
+const isDev = process.env.NODE_ENV === 'development';
+const isProd = !isDev;
+
+const optimization = () => {
+  const config = {
+    splitChunks: {
+      chunks: "all"
+    }
+  }
+
+  if (isProd) {
+    config.minimizer = [
+      new OptimizeCssAssetsWebpackPlugin(),
+      new TerserWebpackPlugin()
+    ]
+  }
+
+  return config;
+}
+
+const filename = (ext) => isDev ? `[name].${ext}` : `[name].[hash].${ext}`;
+
+const cssLoaders = (extra) => {
+  const loaders = [
+    {
+      loader: MiniCSSExtractPlugin.loader,
+      options: {
+        hmr: isDev,
+        reloadAll: true
+      }
+    },
+    'css-loader'
+  ]
+
+  if (extra) {
+    loaders.push(extra);
+  }
+
+  return loaders;
+}
+
+const babelOptions = (preset) => {
+  const options = {
+    presets: [
+      '@babel/preset-env'
+    ],
+    plugins: [
+      '@babel/plugin-proposal-class-properties'
+    ]
+  }
+
+  if (preset) {
+    options.presets.push(preset);
+  }
+
+  return options;
+}
+
+const jsLoaders = () => {
+  const loaders = [{
+    loader: 'babel-loader',
+    options: babelOptions()
+  }];
+
+  if (isDev) {
+    loaders.push('eslint-loader');
+  }
+
+  return loaders;
+}
+
+const plugins = () => {
+  const plugins = [
+    new HTMLWebpackPlugin({
+      template: './index.html',
+      minify: {
+        collapseWhitespace: isProd
+      }
+    }),
+    new CleanWebpackPlugin(),
+    new CopyWebpackPlugin([{
+      from: path.resolve(__dirname, 'src/favicon.ico'),
+      to: path.resolve(__dirname, 'dist')
+    }]),
+    new MiniCSSExtractPlugin({
+      filename: filename('css')
+    })
+  ]
+
+  if (isProd) {
+    plugins.push(new BundleAnalyzerPlugin());
+  }
+
+  return plugins;
+}
 
 module.exports = {
   context: path.resolve(__dirname, 'src'),
   mode: 'development',
   entry: {
-    main: './index.js',
-    analytics: './analytics.js'
+    main: ['@babel/polyfill', './index.jsx'],
+    analytics: './analytics.ts'
   },
   output: {
-    filename: '[name].[contenthash].build.js'
+    filename: filename('js')
   },
   resolve: {
-    extensions: ['.js', '.json'],
+    extensions: ['.js', '.jsx', '.ts', '.json'],
     alias: {
       '@models': path.resolve(__dirname, 'src/models'),
       '@': path.resolve(__dirname, 'src')
     }
   },
-  optimization: {
-    splitChunks: {
-      chunks: "all"
-    }
+  optimization: optimization(),
+  devServer: {
+    port: 4200,
+    hot: isDev
   },
-  plugins: [
-    new HTMLWebpackPlugin({
-      template: './index.html'
-    }),
-    new CleanWebpackPlugin()
-  ],
+  devtool: isDev ? 'source-map' : '',
+  plugins: plugins(),
   module: {
     rules: [
       {
         test: /\.css$/,
-        use: ['style-loader', 'css-loader']
+        use: cssLoaders()
+      },
+      {
+        test: /\.less$/,
+        use: cssLoaders('less-loader')
+      },
+      {
+        test: /\.s[ac]ss$/,
+        use: cssLoaders('sass-loader')
       },
       {
         test: /\.(png|jpg|svg|gif)$/,
@@ -51,6 +156,27 @@ module.exports = {
       {
         test: /\.csv$/,
         use: 'csv-loader'
+      },
+      {
+        test: /\.js?$/,
+        exclude: /node_modules/,
+        use: jsLoaders()
+      },
+      {
+        test: /\.ts?$/,
+        exclude: /node_modules/,
+        loader: {
+          loader: 'babel-loader',
+          options: babelOptions('@babel/preset-typescript')
+        }
+      },
+      {
+        test: /\.jsx?$/,
+        exclude: /node_modules/,
+        loader: {
+          loader: 'babel-loader',
+          options: babelOptions('@babel/preset-react')
+        }
       }
     ]
   }
